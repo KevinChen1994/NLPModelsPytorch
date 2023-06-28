@@ -25,7 +25,7 @@ parser.add_argument("--epochs", type=int, default=10)
 parser.add_argument("--batch_size_train", type=int, default=4)
 parser.add_argument("--batch_size_eval", type=int, default=4)
 parser.add_argument("--num_workers", type=int, default=0)
-parser.add_argument("--eval_step", type=int, default=100, help="every eval_step to evaluate model")
+parser.add_argument("--eval_step", type=int, default=10, help="every eval_step to evaluate model")
 parser.add_argument("--max_length", type=int, default=64, help="max length of input")
 parser.add_argument("--seed", type=int, default=42, help="random seed")
 parser.add_argument("--train_file", type=str, default="data/lcqmc/train.tsv")
@@ -78,7 +78,9 @@ class TrainDataSet(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        # 这里将同一个句子使用两次的目的就是通过dropout拿到相同句子不同的embedding
+        return tokenizer([self.data[idx][0], self.data[idx][1]], max_length=args.max_length, truncation=True,
+                         padding='max_length', return_tensors='pt')
 
 
 class TestDataSet(Dataset):
@@ -101,41 +103,21 @@ class TestDataSet(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx]
-
-
-def train_collote_fn(batch_samples):
-    sentence_batch = []
-    for sample in batch_samples:
-        # 这里将同一个句子使用两次的目的就是通过dropout拿到相同句子不同的embedding
-        sentence_batch.append(sample)
-        sentence_batch.append(sample)
-    data = tokenizer(sentence_batch, padding='max_length', truncation=True, max_length=args.max_length,
-                     return_tensors='pt')
-    input_ids = data['input_ids'].view(-1, args.max_length).to(args.device)
-    attention_mask = data['attention_mask'].view(-1, args.max_length).to(args.device)
-    token_type_ids = data['token_type_ids'].view(-1, args.max_length).to(args.device)
-    return input_ids, attention_mask, token_type_ids
-
-
-def test_collote_fn(batch_samples):
-    sentence_batch_1, sentence_batch_2, label_batch = [], [], []
-    for sample in batch_samples:
-        sentence_batch_1.append(sample[0])
-        sentence_batch_2.append(sample[1])
-        label_batch.append(sample[2])
-    source_data = tokenizer(sentence_batch_1, padding='max_length', truncation=True, max_length=args.max_length,
-                            return_tensors='pt')
-    target_data = tokenizer(sentence_batch_2, padding='max_length', truncation=True, max_length=args.max_length,
-                            return_tensors='pt')
-    source_input_ids = source_data['input_ids'].view(-1, args.max_length).to(args.device)
-    source_attention_mask = source_data['attention_mask'].view(-1, args.max_length).to(args.device)
-    source_token_type_ids = source_data['token_type_ids'].view(-1, args.max_length).to(args.device)
-    target_input_ids = target_data['input_ids'].view(-1, args.max_length).to(args.device)
-    target_attention_mask = target_data['attention_mask'].view(-1, args.max_length).to(args.device)
-    target_token_type_ids = target_data['token_type_ids'].view(-1, args.max_length).to(args.device)
-    label_tensor = torch.tensor(label_batch, device=args.device)
-    return source_input_ids, source_attention_mask, source_token_type_ids, target_input_ids, target_attention_mask, target_token_type_ids, label_tensor
+        source = tokenizer(self.data[idx][0], max_length=args.max_length, truncation=True, padding='max_length',
+                           return_tensors='pt')
+        target = tokenizer(self.data[idx][1], max_length=args.max_length, truncation=True, padding='max_length',
+                           return_tensors='pt')
+        source_input_ids = source['input_ids'].view(args.max_length).to(args.device)
+        source_attention_mask = source['attention_mask'].view(args.max_length).to(args.device)
+        source_token_type_ids = source['token_type_ids'].view(args.max_length).to(args.device)
+        target_input_ids = target['input_ids'].view(args.max_length).to(args.device)
+        target_attention_mask = target['attention_mask'].view(args.max_length).to(args.device)
+        target_token_type_ids = target['token_type_ids'].view(args.max_length).to(args.device)
+        source_input = {'input_ids': source_input_ids, 'attention_mask': source_attention_mask,
+                        'token_type_ids': source_token_type_ids}
+        target_input = {'input_ids': target_input_ids, 'attention_mask': target_attention_mask,
+                        'token_type_ids': target_token_type_ids}
+        return [source_input, target_input, torch.tensor(self.data[idx][2], device=args.device)]
 
 
 class BertSimCSEModel(nn.Module):
@@ -165,13 +147,16 @@ class BertSimCSEModel(nn.Module):
             return torch.avg_pool1d(avg.transpose(1, 2), kernel_size=2).squeeze(-1)  # [batch, 768]
 
 
-def train_loop(dataloader, model, optimizer, lr_scheduler, epoch, total_loss):
-    progress_bar = tqdm(range(len(dataloader)))
+def train_loop(train_dataloader, test_dataloader, model, optimizer, lr_scheduler, epoch, total_loss, best_acc):
+    progress_bar = tqdm(range(len(train_dataloader)))
     progress_bar.set_description(f'loss: {0:>7f}')
-    finish_step_num = (epoch - 1) * len(dataloader)
+    finish_step_num = epoch * len(train_dataloader)
 
     model.train()
-    for step, (input_ids, attention_mask, token_type_ids) in enumerate(dataloader, start=1):
+    for step, inputs in enumerate(train_dataloader, start=1):
+        input_ids = inputs['input_ids'].view(len(inputs['input_ids']) * 2, -1).to(args.device)
+        attention_mask = inputs['attention_mask'].view(len(inputs['attention_mask']) * 2, -1).to(args.device)
+        token_type_ids = inputs['token_type_ids'].view(len(inputs['token_type_ids']) * 2, -1).to(args.device)
         pred = model(input_ids, attention_mask, token_type_ids)
         loss = simcse_loss.simcse_unsup_loss(pred, args.device)
 
@@ -184,9 +169,18 @@ def train_loop(dataloader, model, optimizer, lr_scheduler, epoch, total_loss):
         lr_scheduler.step()
 
         total_loss += loss.item()
-        progress_bar.set_description(f'loss: {total_loss / (finish_step_num + step):>7f}')
+        progress_bar.set_description('loss: {:.7f}'.format(total_loss / (finish_step_num + step)))
         progress_bar.update(1)
-    return total_loss
+        if step % args.eval_step == 0:
+            model.eval()
+            eval_acc = test_loop(test_dataloader, model)
+            print("acc_test:" + "{:.4f}".format(eval_acc))
+            if eval_acc > best_acc:
+                best_acc = eval_acc
+                print('saving new weights...\n')
+                torch.save(bertSimCSEModel.state_dict(), './checkpoints/bert_simcse_unsupervised/model_weights.bin')
+            model.train()
+    return total_loss, best_acc
 
 
 def test_loop(dataloader, model, mode='Test'):
@@ -194,10 +188,9 @@ def test_loop(dataloader, model, mode='Test'):
     sim_tensor = torch.tensor([], device=args.device)
     label_tensor = torch.tensor([], device=args.device)
     with torch.no_grad():
-        for source_input_ids, source_attention_mask, source_token_type_ids, target_input_ids, target_attention_mask, target_token_type_ids, label in tqdm(
-                dataloader):
-            source_pred = model(source_input_ids, source_attention_mask, source_token_type_ids)
-            target_pred = model(target_input_ids, target_attention_mask, target_token_type_ids)
+        for source, target, label in tqdm(dataloader):
+            source_pred = model(source['input_ids'], source['attention_mask'], source['token_type_ids'])
+            target_pred = model(target['input_ids'], target['attention_mask'], target['token_type_ids'])
             sim = F.cosine_similarity(source_pred, target_pred, dim=-1)
             # concat
             sim_tensor = torch.cat((sim_tensor, sim), dim=0)
@@ -214,10 +207,8 @@ if __name__ == '__main__':
 
     test_data = TestDataSet(args.dev_file)
 
-    train_dataloader = DataLoader(dataset=train_data, batch_size=args.batch_size_train, shuffle=True,
-                                  collate_fn=train_collote_fn)
-    test_dataloader = DataLoader(dataset=test_data, batch_size=args.batch_size_eval, shuffle=False,
-                                 collate_fn=test_collote_fn)
+    train_dataloader = DataLoader(dataset=train_data, batch_size=args.batch_size_train, shuffle=True)
+    test_dataloader = DataLoader(dataset=test_data, batch_size=args.batch_size_eval, shuffle=False)
 
     config = BertConfig.from_pretrained(args.pretrain_model_path)
     config.attention_probs_dropout_prob = args.dropout
@@ -236,11 +227,6 @@ if __name__ == '__main__':
     best_acc = 0
     for epoch in range(args.epochs):
         print(f"Epoch {epoch + 1}/{args.epochs}\n-------------------------------")
-        total_loss = train_loop(train_dataloader, bertSimCSEModel, optimizer, lr_scheduler, args.epochs, total_loss)
-        valid_acc = test_loop(test_dataloader, bertSimCSEModel, 'Test')
-        print('valid acc' + str(valid_acc))
-        if valid_acc > best_acc:
-            best_acc = valid_acc
-            print('saving new weights...\n')
-            torch.save(bertSimCSEModel.state_dict(), './checkpoints/BertSimCSE/model_weights.bin')
-        print("Done!")
+        total_loss, best_acc = train_loop(train_dataloader, test_dataloader, bertSimCSEModel, optimizer, lr_scheduler, epoch,
+                                total_loss, best_acc)
+    print("Done!")

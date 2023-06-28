@@ -24,7 +24,7 @@ def simcse_unsup_loss_bak(y_pred, device, temp=0.05):
     sim_score = sim_score - torch.eye(batch_size, device=device) * 1e12
     sim_score = sim_score / temp
     loss = F.cross_entropy(sim_score, y_true)
-    return loss
+    return torch.mean(loss)
 
 
 def simcse_unsup_loss(y_pred, device, temp=0.05):
@@ -64,7 +64,7 @@ def simcse_sup_loss_bak(y_pred, device, lamda=0.05):
     similarities = similarities / lamda
 
     loss = F.cross_entropy(similarities, y_true)
-    return loss
+    return torch.mean(loss)
 
 
 def simcse_sup_loss(y_pred, device, lamda=0.05):
@@ -103,7 +103,7 @@ def simcse_sup_loss(y_pred, device, lamda=0.05):
 
 
 if __name__ == '__main__':
-    y_pred = torch.rand((6, 6))
+    y_pred = torch.rand((6, 6), device="cuda")
     loss = simcse_unsup_loss_bak(y_pred, 'cpu', 0.05)
     print(loss)
     loss = simcse_unsup_loss(y_pred, 'cpu', 0.05)
