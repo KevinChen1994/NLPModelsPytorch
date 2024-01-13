@@ -13,7 +13,7 @@ import random
 import logging
 from arguments import get_args
 from transformers import  EvalPrediction, BertTokenizer
-from data.dataset import SIMCSEDataset, DataCollator
+from dataset import SIMCSEDataset, DataCollator
 from arguments import DATASETS
 from model.simcse_model import RBT6SimCSEModel
 import evaluate
@@ -49,7 +49,7 @@ def compute_metrics(p: EvalPrediction):
     result = metric.compute(predictions=preds, references=p.label_ids)
     return result
 
-
+# 如果使用raw_data.map()，可以调用这个方法
 def prepare_dataset(examples):
     result = defaultdict(list)
     for example in examples['text']:
