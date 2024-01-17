@@ -10,10 +10,9 @@ from typing import Optional
 from transformers import HfArgumentParser, TrainingArguments
 
 task_to_keys = {
-    'category_classification': ("title", "content"),
-    'mismatch_classification':("title", "content")
+    'classification': ("label", "title")
 }
-DATASETS = {"category_classification":"data/category_classification", "mismatch_classification":'data/mismatch_classification'}
+DATASETS = {"classification":"dataset/toutiao_classification"}
 
 @dataclass
 class DataTrainingArguments:

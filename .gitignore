@@ -9,3 +9,4 @@ out
 gen
 checkpoints
 dataset
+*.pyc

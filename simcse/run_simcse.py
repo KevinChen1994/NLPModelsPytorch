@@ -13,7 +13,7 @@ import random
 import logging
 from arguments import get_args
 from transformers import  EvalPrediction, BertTokenizer
-from dataset import SIMCSEDataset, DataCollator
+from simcse.dataset import SIMCSEDataset, DataCollator
 from arguments import DATASETS
 from model.simcse_model import RBT6SimCSEModel
 import evaluate

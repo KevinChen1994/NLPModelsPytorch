@@ -1,0 +1,49 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: 当前文件",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${fileDirname}"
+        },
+        {
+            "name": "cnn",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${fileDirname}",
+            "args": [
+                "--task_name", "classification",
+                "--dataset_name", "classification",
+                "--max_seq_length","50",
+                "--train_file","dataset/toutiao_classification/train.txt",
+                "--validation_file","dataset/toutiao_classification/test.txt",
+                "--test_file","dataset/toutiao_classification/test.txt",
+                "--model_name_or_path", "cnn",
+                "--output_dir","../checkpoints/cnn_model",
+                "--do_train", "true",
+                "--do_eval", "true",
+                "--evaluation_strategy", "steps",
+                "--eval_steps", "10",
+                "--per_device_train_batch_size","256",
+                "--per_device_eval_batch_size","512",
+                "--learning_rate","5e-3",
+                "--num_train_epochs","5",
+                "--save_strategy", "steps",
+                "--save_steps", "10",
+                "--save_total_limit", "2",
+                "--remove_unused_columns", "false",
+                "--include_inputs_for_metrics", "false"
+            ]
+        }
+    ]
+}

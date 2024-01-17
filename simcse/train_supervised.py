@@ -78,21 +78,6 @@ class TestDataset:
         return self.text_to_id(self.all_data[idx][0]), self.text_to_id(self.all_data[idx][1]), int(self.all_data[idx][2])
 
 
-class NeuralNetwork(nn.Module):
-    def __init__(self, model_path, output_way):
-        super(NeuralNetwork, self).__init__()
-        self.bert = BertModel.from_pretrained(model_path, config=Config)
-        self.output_way = output_way
-        assert output_way in ['cls', 'pooler']
-
-    def forward(self, input_ids, attention_mask, token_type_ids):
-        x1 = self.bert(input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        if self.output_way == 'cls':
-            output = x1.last_hidden_state[:, 0]
-        elif self.output_way == 'pooler':
-            output = x1.pooler_output
-        return output
-
 class BertSimCSEModel(nn.Module):
     def __init__(self,
                  config,
@@ -120,7 +105,6 @@ class BertSimCSEModel(nn.Module):
             return torch.avg_pool1d(avg.transpose(1, 2), kernel_size=2).squeeze(-1)  # [batch, 768]
 
 
-# model = NeuralNetwork(model_path, output_way).to(device)
 model = BertSimCSEModel(model_path, output_way).to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
